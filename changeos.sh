@@ -24,7 +24,6 @@ NC='\033[0m' # No Color
 
 # Default values
 BACKUP_DIR="/var/changeos-backup"
-DRY_RUN=false
 TARGET_OS=""
 TARGET_VERSION=""
 SCRIPT_VERSION="2.0.0"
@@ -213,17 +212,15 @@ select_version_menu() {
             ;;
         kali)
             echo "  1. Kali Linux Rolling (Latest)"
-            echo "  2. Kali Linux 2024.1"
-            echo "  3. Kali Linux 2023.4"
+            echo ""
+            printf "${YELLOW}  Note: Kali Linux uses a rolling release model.${NC}\n"
             echo ""
             echo "  0. Go back"
             echo ""
-            printf "${BOLD}Enter your choice [1-3]:${NC} "
+            printf "${BOLD}Enter your choice [1]:${NC} "
             read -r version_choice
             case $version_choice in
                 1) TARGET_VERSION="rolling" ;;
-                2) TARGET_VERSION="2024.1" ;;
-                3) TARGET_VERSION="2023.4" ;;
                 0) select_os_menu; select_version_menu ;;
                 *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
             esac
@@ -424,14 +421,10 @@ backup_home_dirs() {
                 local username=$(basename "$home_dir")
                 log_info "  Backing up /home/${username}..."
                 
-                if [[ "$DRY_RUN" == true ]]; then
-                    log_info "  [DRY-RUN] Would backup /home/${username}"
-                else
-                    tar -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username" 2>/dev/null || {
-                        log_warning "Failed to backup /home/${username}, trying with --ignore-failed-read"
-                        tar --ignore-failed-read -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username"
-                    }
-                fi
+                tar -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username" 2>/dev/null || {
+                    log_warning "Failed to backup /home/${username}, trying with --ignore-failed-read"
+                    tar --ignore-failed-read -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username"
+                }
             fi
         done
     fi
@@ -439,9 +432,7 @@ backup_home_dirs() {
     # Backup /root if needed
     if [[ -d /root ]]; then
         log_info "  Backing up /root..."
-        if [[ "$DRY_RUN" != true ]]; then
-            tar -czf "${home_backup_dir}/root.tar.gz" -C / root 2>/dev/null || true
-        fi
+        tar -czf "${home_backup_dir}/root.tar.gz" -C / root 2>/dev/null || true
     fi
     
     log_success "Home directories backed up to ${home_backup_dir}"
@@ -757,11 +748,7 @@ prepare_ubuntu() {
             ;;
     esac
     
-    if [[ "$DRY_RUN" != true ]]; then
-        debootstrap --arch=amd64 "$codename" "$target_dir" http://archive.ubuntu.com/ubuntu/
-    else
-        log_info "[DRY-RUN] Would run: debootstrap --arch=amd64 $codename $target_dir"
-    fi
+    debootstrap --arch=amd64 "$codename" "$target_dir" http://archive.ubuntu.com/ubuntu/
 }
 
 # Prepare Debian
@@ -780,11 +767,7 @@ prepare_debian() {
             ;;
     esac
     
-    if [[ "$DRY_RUN" != true ]]; then
-        debootstrap --arch=amd64 "$codename" "$target_dir" http://deb.debian.org/debian/
-    else
-        log_info "[DRY-RUN] Would run: debootstrap --arch=amd64 $codename $target_dir"
-    fi
+    debootstrap --arch=amd64 "$codename" "$target_dir" http://deb.debian.org/debian/
 }
 
 # Prepare RHEL-based (CentOS, Rocky, AlmaLinux)
@@ -826,17 +809,13 @@ prepare_rhel_based() {
             ;;
     esac
     
-    if [[ "$DRY_RUN" != true ]]; then
-        log_info "Downloading ${TARGET_OS} ${TARGET_VERSION} from ${base_url}"
-        # For RHEL-based systems, we'll use a different approach
-        mkdir -p "${target_dir}"
-        # Create marker file with installation info
-        echo "BASE_URL=${base_url}" > "${target_dir}/install.conf"
-        echo "OS=${TARGET_OS}" >> "${target_dir}/install.conf"
-        echo "VERSION=${TARGET_VERSION}" >> "${target_dir}/install.conf"
-    else
-        log_info "[DRY-RUN] Would download ${TARGET_OS} ${TARGET_VERSION} from ${base_url}"
-    fi
+    log_info "Downloading ${TARGET_OS} ${TARGET_VERSION} from ${base_url}"
+    # For RHEL-based systems, we'll use a different approach
+    mkdir -p "${target_dir}"
+    # Create marker file with installation info
+    echo "BASE_URL=${base_url}" > "${target_dir}/install.conf"
+    echo "OS=${TARGET_OS}" >> "${target_dir}/install.conf"
+    echo "VERSION=${TARGET_VERSION}" >> "${target_dir}/install.conf"
 }
 
 # Prepare Fedora
@@ -846,37 +825,19 @@ prepare_fedora() {
     
     local base_url="https://download.fedoraproject.org/pub/fedora/linux/releases/${TARGET_VERSION}/Everything/x86_64/os/"
     
-    if [[ "$DRY_RUN" != true ]]; then
-        mkdir -p "${target_dir}"
-        echo "BASE_URL=${base_url}" > "${target_dir}/install.conf"
-        echo "OS=fedora" >> "${target_dir}/install.conf"
-        echo "VERSION=${TARGET_VERSION}" >> "${target_dir}/install.conf"
-    else
-        log_info "[DRY-RUN] Would download Fedora ${TARGET_VERSION} from ${base_url}"
-    fi
+    mkdir -p "${target_dir}"
+    echo "BASE_URL=${base_url}" > "${target_dir}/install.conf"
+    echo "OS=fedora" >> "${target_dir}/install.conf"
+    echo "VERSION=${TARGET_VERSION}" >> "${target_dir}/install.conf"
 }
 
 # Prepare Kali Linux
 prepare_kali() {
     local target_dir="$1"
-    log_info "Preparing Kali Linux ${TARGET_VERSION}..."
+    log_info "Preparing Kali Linux..."
     
-    local codename=""
-    case "$TARGET_VERSION" in
-        rolling) codename="kali-rolling" ;;
-        2024.1|2024) codename="kali-rolling" ;;
-        2023.4|2023) codename="kali-rolling" ;;
-        *)
-            log_error "Unsupported Kali Linux version: $TARGET_VERSION"
-            exit 1
-            ;;
-    esac
-    
-    if [[ "$DRY_RUN" != true ]]; then
-        debootstrap --arch=amd64 "$codename" "$target_dir" http://http.kali.org/kali
-    else
-        log_info "[DRY-RUN] Would run: debootstrap --arch=amd64 $codename $target_dir"
-    fi
+    # Kali Linux uses rolling release model
+    debootstrap --arch=amd64 kali-rolling "$target_dir" http://http.kali.org/kali
 }
 
 # Perform the OS change
