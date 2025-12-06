@@ -4,32 +4,26 @@ A shell script to change the OS and version on cloud VPS instances (Azure, AWS, 
 
 ## Features
 
+- **Interactive Menu**: Easy-to-use menu system for selecting OS and version
 - **Multi-Cloud Support**: Works with Azure VPS, AWS EC2, Google Cloud Compute Engine, and Oracle Cloud Infrastructure
 - **Network Preservation**: Backs up and restores IP address, gateway, DNS, and routing configuration
 - **Home Folder Protection**: Preserves all data in `/home/*` directories
 - **SSH Key Preservation**: Maintains SSH host keys and user authorized_keys
 - **User Account Preservation**: Backs up user accounts, groups, and sudo configurations
 - **Automatic Cloud Detection**: Detects the cloud provider automatically
-- **Dry-Run Mode**: Test the process without making any changes
+- **Automatic Restoration**: Sets up automatic restoration after OS change
 - **Restoration Script**: Generates a restoration script for easy recovery
 
 ## Supported Operating Systems
 
-### Source (Current) OS
-- Ubuntu (18.04, 20.04, 22.04, 24.04)
-- Debian (10, 11, 12)
-- CentOS (8-stream, 9-stream)
-- Rocky Linux (8, 9)
-- AlmaLinux (8, 9)
-- Fedora (38, 39, 40)
-
-### Target (New) OS
-- Ubuntu (18.04, 20.04, 22.04, 24.04)
-- Debian (10, 11, 12)
-- CentOS (8-stream, 9-stream)
-- Rocky Linux (8, 9)
-- AlmaLinux (8, 9)
-- Fedora (38, 39, 40)
+### Target OS Options
+- **Debian** (10, 11, 12)
+- **Ubuntu** (18.04, 20.04, 22.04, 24.04)
+- **AlmaLinux** (8, 9)
+- **Rocky Linux** (8, 9)
+- **CentOS** (8-stream, 9-stream)
+- **Fedora** (38, 39, 40)
+- **Kali Linux** (rolling, 2024.1, 2023.4)
 
 ## Requirements
 
@@ -51,38 +45,58 @@ chmod +x changeos.sh
 
 ## Usage
 
-```bash
-sudo ./changeos.sh [options]
-```
-
-### Options
-
-| Option | Description |
-|--------|-------------|
-| `-t, --target-os` | Target OS (ubuntu, debian, centos, rocky, fedora, almalinux) |
-| `-v, --version` | Target OS version (e.g., 22.04, 12, 9) |
-| `-b, --backup-dir` | Directory to store backups (default: `/var/changeos-backup`) |
-| `-d, --dry-run` | Perform a dry run without making changes |
-| `-h, --help` | Show help message |
-
-### Examples
+Simply run the script and follow the interactive menus:
 
 ```bash
-# Change from current OS to Ubuntu 22.04
-sudo ./changeos.sh -t ubuntu -v 22.04
-
-# Change to Debian 12 with custom backup location
-sudo ./changeos.sh -t debian -v 12 -b /mnt/backup
-
-# Change to Rocky Linux 9 (dry-run mode)
-sudo ./changeos.sh -t rocky -v 9 --dry-run
-
-# Change to CentOS 9 Stream
-sudo ./changeos.sh -t centos -v 9
-
-# Change to AlmaLinux 9
-sudo ./changeos.sh -t almalinux -v 9
+sudo ./changeos.sh
 ```
+
+### Interactive Menu Flow
+
+1. **Select OS**: Choose from available operating systems
+```
+=============================================
+       Change OS - Select Operating System
+=============================================
+
+Select OS:
+
+  1. Debian
+  2. Ubuntu
+  3. AlmaLinux
+  4. Rocky Linux
+  5. CentOS
+  6. Fedora
+  7. Kali Linux
+
+  0. Exit
+
+Enter your choice [1-7]:
+```
+
+2. **Select Version**: Choose the version for your selected OS
+```
+=============================================
+       Change OS - Select Version
+=============================================
+
+Selected OS: ubuntu
+
+Select version:
+
+  1. Ubuntu 24.04 LTS (Noble Numbat)
+  2. Ubuntu 22.04 LTS (Jammy Jellyfish)
+  3. Ubuntu 20.04 LTS (Focal Fossa)
+  4. Ubuntu 18.04 LTS (Bionic Beaver)
+
+  0. Go back
+
+Enter your choice [1-4]:
+```
+
+3. **Confirm Selection**: Review and confirm your choice
+4. **Backup**: Script automatically backs up your data
+5. **Next Steps**: Follow instructions to complete OS change via cloud console
 
 ## How It Works
 
@@ -92,15 +106,16 @@ sudo ./changeos.sh -t almalinux -v 9
 3. **SSH Configuration**: Backs up host keys, sshd_config, and user SSH keys
 4. **User Accounts**: Preserves passwd, shadow, group files, and sudo configurations
 
-### Phase 2: OS Change (Manual via Cloud Console)
+### Phase 2: OS Change (Via Cloud Console)
 1. Stop the VM in your cloud provider's console
 2. Change the boot disk/image to the target OS
 3. Start the VM
 
-### Phase 3: Restoration (Semi-Automatic)
-1. SSH into the new system
-2. Run the restoration script: `sudo /var/changeos-backup/restore.sh`
-3. Reboot to apply all changes
+### Phase 3: Restoration (Automatic)
+Restoration runs automatically after OS change, or you can run manually:
+```bash
+sudo /var/changeos-backup/restore.sh
+```
 
 ## Backup Structure
 
@@ -127,6 +142,7 @@ sudo ./changeos.sh -t almalinux -v 9
 │   ├── group                 # Group definitions
 │   └── sudoers               # Sudo configuration
 ├── restore.sh                # Restoration script
+├── install_auto_restore.sh   # Auto-restore service installer
 ├── install_cloud_agents.sh   # Cloud agent installer
 └── changeos_report.txt       # Backup summary report
 ```
@@ -151,10 +167,10 @@ sudo ./changeos.sh -t almalinux -v 9
 
 ## Safety Features
 
-- **Dry-Run Mode**: Test without making changes using `-d` or `--dry-run`
 - **Confirmation Prompt**: Requires explicit "yes" confirmation before OS change
 - **Backup Verification**: Creates detailed report of all backed-up data
 - **Restoration Script**: Automatically generated for easy recovery
+- **Automatic Restoration**: Sets up systemd service for automatic restoration
 
 ## Troubleshooting
 
@@ -186,6 +202,15 @@ grep username /var/changeos-backup/users/passwd
 sudo useradd -m username
 sudo cp -r /var/changeos-backup/ssh/users/username/.ssh /home/username/
 sudo chown -R username:username /home/username/.ssh
+```
+
+### Automatic restoration didn't run
+```bash
+# Install the auto-restore service manually
+sudo /var/changeos-backup/install_auto_restore.sh
+
+# Or run restoration directly
+sudo /var/changeos-backup/restore.sh
 ```
 
 ## Limitations

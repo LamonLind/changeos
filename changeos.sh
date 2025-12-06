@@ -5,19 +5,10 @@
 # Supported cloud providers: Azure, AWS, Google Cloud, Oracle Cloud
 # Preserves: Network configuration (IP, gateway, DNS, routes), Home folder data
 #
-# Usage: sudo ./changeos.sh [options]
+# Usage: sudo ./changeos.sh
 #
-# Options:
-#   -t, --target-os      Target OS (ubuntu, debian, centos, rocky, fedora, almalinux)
-#   -v, --version        Target OS version (e.g., 22.04, 11, 8, 9)
-#   -b, --backup-dir     Directory to store backups (default: /var/changeos-backup)
-#   -d, --dry-run        Perform a dry run without making changes
-#   -h, --help           Show this help message
-#
-# Examples:
-#   sudo ./changeos.sh -t ubuntu -v 22.04
-#   sudo ./changeos.sh -t debian -v 12 --dry-run
-#   sudo ./changeos.sh -t rocky -v 9 -b /mnt/backup
+# The script provides an interactive menu to select OS and version.
+# Restoration runs automatically after OS change.
 #
 
 set -euo pipefail
@@ -27,6 +18,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Default values
@@ -34,7 +27,7 @@ BACKUP_DIR="/var/changeos-backup"
 DRY_RUN=false
 TARGET_OS=""
 TARGET_VERSION=""
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="2.0.0"
 
 # Logging functions
 log_info() {
@@ -61,91 +54,217 @@ check_root() {
     fi
 }
 
-# Show usage/help
-show_help() {
-    cat << EOF
-changeos.sh - Change OS and version on cloud VPS
-
-Version: ${SCRIPT_VERSION}
-
-Usage: sudo ./changeos.sh [options]
-
-Options:
-  -t, --target-os      Target OS (ubuntu, debian, centos, rocky, fedora, almalinux)
-  -v, --version        Target OS version (e.g., 22.04, 11, 8, 9)
-  -b, --backup-dir     Directory to store backups (default: /var/changeos-backup)
-  -d, --dry-run        Perform a dry run without making changes
-  -h, --help           Show this help message
-
-Supported Cloud Providers:
-  - Azure VPS
-  - AWS EC2
-  - Google Cloud Compute Engine
-  - Oracle Cloud Infrastructure
-
-Preserved Data:
-  - Network configuration (IP address, gateway, DNS, routes)
-  - Home folder contents (/home/*)
-  - SSH keys and authorized_keys
-
-Examples:
-  sudo ./changeos.sh -t ubuntu -v 22.04
-  sudo ./changeos.sh -t debian -v 12 --dry-run
-  sudo ./changeos.sh -t rocky -v 9 -b /mnt/backup
-
-EOF
+# Display OS selection menu
+select_os_menu() {
+    clear
+    echo ""
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    printf "${BOLD}${CYAN}       Change OS - Select Operating System${NC}\n"
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    echo ""
+    printf "${BOLD}Select OS:${NC}\n"
+    echo ""
+    echo "  1. Debian"
+    echo "  2. Ubuntu"
+    echo "  3. AlmaLinux"
+    echo "  4. Rocky Linux"
+    echo "  5. CentOS"
+    echo "  6. Fedora"
+    echo "  7. Kali Linux"
+    echo ""
+    echo "  0. Exit"
+    echo ""
+    printf "${BOLD}Enter your choice [1-7]:${NC} "
+    
+    read -r os_choice
+    
+    case $os_choice in
+        1) TARGET_OS="debian" ;;
+        2) TARGET_OS="ubuntu" ;;
+        3) TARGET_OS="almalinux" ;;
+        4) TARGET_OS="rocky" ;;
+        5) TARGET_OS="centos" ;;
+        6) TARGET_OS="fedora" ;;
+        7) TARGET_OS="kali" ;;
+        0) 
+            echo ""
+            log_info "Exiting..."
+            exit 0
+            ;;
+        *)
+            log_error "Invalid choice. Please try again."
+            sleep 2
+            select_os_menu
+            ;;
+    esac
 }
 
-# Parse command line arguments
-parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -t|--target-os)
-                TARGET_OS="$2"
-                shift 2
-                ;;
-            -v|--version)
-                TARGET_VERSION="$2"
-                shift 2
-                ;;
-            -b|--backup-dir)
-                BACKUP_DIR="$2"
-                shift 2
-                ;;
-            -d|--dry-run)
-                DRY_RUN=true
-                shift
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                show_help
-                exit 1
-                ;;
-        esac
-    done
+# Display version selection menu based on OS
+select_version_menu() {
+    clear
+    echo ""
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    printf "${BOLD}${CYAN}       Change OS - Select Version${NC}\n"
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    echo ""
+    printf "${BOLD}Selected OS: ${GREEN}${TARGET_OS}${NC}\n"
+    echo ""
+    printf "${BOLD}Select version:${NC}\n"
+    echo ""
+    
+    case "${TARGET_OS}" in
+        debian)
+            echo "  1. Debian 12 (Bookworm)"
+            echo "  2. Debian 11 (Bullseye)"
+            echo "  3. Debian 10 (Buster)"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-3]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="12" ;;
+                2) TARGET_VERSION="11" ;;
+                3) TARGET_VERSION="10" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        ubuntu)
+            echo "  1. Ubuntu 24.04 LTS (Noble Numbat)"
+            echo "  2. Ubuntu 22.04 LTS (Jammy Jellyfish)"
+            echo "  3. Ubuntu 20.04 LTS (Focal Fossa)"
+            echo "  4. Ubuntu 18.04 LTS (Bionic Beaver)"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-4]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="24.04" ;;
+                2) TARGET_VERSION="22.04" ;;
+                3) TARGET_VERSION="20.04" ;;
+                4) TARGET_VERSION="18.04" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        almalinux)
+            echo "  1. AlmaLinux 9"
+            echo "  2. AlmaLinux 8"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-2]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="9" ;;
+                2) TARGET_VERSION="8" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        rocky)
+            echo "  1. Rocky Linux 9"
+            echo "  2. Rocky Linux 8"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-2]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="9" ;;
+                2) TARGET_VERSION="8" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        centos)
+            echo "  1. CentOS 9 Stream"
+            echo "  2. CentOS 8 Stream"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-2]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="9" ;;
+                2) TARGET_VERSION="8" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        fedora)
+            echo "  1. Fedora 40"
+            echo "  2. Fedora 39"
+            echo "  3. Fedora 38"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-3]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="40" ;;
+                2) TARGET_VERSION="39" ;;
+                3) TARGET_VERSION="38" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+        kali)
+            echo "  1. Kali Linux Rolling (Latest)"
+            echo "  2. Kali Linux 2024.1"
+            echo "  3. Kali Linux 2023.4"
+            echo ""
+            echo "  0. Go back"
+            echo ""
+            printf "${BOLD}Enter your choice [1-3]:${NC} "
+            read -r version_choice
+            case $version_choice in
+                1) TARGET_VERSION="rolling" ;;
+                2) TARGET_VERSION="2024.1" ;;
+                3) TARGET_VERSION="2023.4" ;;
+                0) select_os_menu; select_version_menu ;;
+                *) log_error "Invalid choice"; sleep 2; select_version_menu ;;
+            esac
+            ;;
+    esac
 }
 
-# Validate target OS
-validate_target_os() {
-    local valid_os=("ubuntu" "debian" "centos" "rocky" "fedora" "almalinux")
-    local found=false
+# Confirm selection
+confirm_selection() {
+    clear
+    echo ""
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    printf "${BOLD}${CYAN}       Change OS - Confirm Selection${NC}\n"
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    echo ""
+    printf "${BOLD}You have selected:${NC}\n"
+    echo ""
+    printf "  OS:      ${GREEN}${TARGET_OS}${NC}\n"
+    printf "  Version: ${GREEN}${TARGET_VERSION}${NC}\n"
+    echo ""
+    printf "${YELLOW}This will backup your data and prepare for OS change.${NC}\n"
+    printf "${YELLOW}Network configuration, home folders, and SSH keys will be preserved.${NC}\n"
+    echo ""
+    printf "${BOLD}Proceed with this selection? [y/n]:${NC} "
     
-    for os in "${valid_os[@]}"; do
-        if [[ "${TARGET_OS,,}" == "$os" ]]; then
-            found=true
-            break
-        fi
-    done
-    
-    if [[ "$found" == false ]]; then
-        log_error "Invalid target OS: $TARGET_OS"
-        log_info "Valid options: ${valid_os[*]}"
-        exit 1
-    fi
+    read -r confirm
+    case "${confirm,,}" in
+        y|yes)
+            return 0
+            ;;
+        n|no)
+            select_os_menu
+            select_version_menu
+            confirm_selection
+            ;;
+        *)
+            log_error "Please enter 'y' or 'n'"
+            sleep 1
+            confirm_selection
+            ;;
+    esac
 }
 
 # Detect current OS
@@ -611,6 +730,9 @@ prepare_new_os() {
         fedora)
             prepare_fedora "$new_os_dir"
             ;;
+        kali)
+            prepare_kali "$new_os_dir"
+            ;;
         *)
             log_error "Unsupported target OS: $TARGET_OS"
             exit 1
@@ -734,34 +856,46 @@ prepare_fedora() {
     fi
 }
 
+# Prepare Kali Linux
+prepare_kali() {
+    local target_dir="$1"
+    log_info "Preparing Kali Linux ${TARGET_VERSION}..."
+    
+    local codename=""
+    case "$TARGET_VERSION" in
+        rolling) codename="kali-rolling" ;;
+        2024.1|2024) codename="kali-rolling" ;;
+        2023.4|2023) codename="kali-rolling" ;;
+        *)
+            log_error "Unsupported Kali Linux version: $TARGET_VERSION"
+            exit 1
+            ;;
+    esac
+    
+    if [[ "$DRY_RUN" != true ]]; then
+        debootstrap --arch=amd64 "$codename" "$target_dir" http://http.kali.org/kali
+    else
+        log_info "[DRY-RUN] Would run: debootstrap --arch=amd64 $codename $target_dir"
+    fi
+}
+
 # Perform the OS change
 perform_os_change() {
     log_info "Performing OS change..."
     
-    if [[ "$DRY_RUN" == true ]]; then
-        log_info "[DRY-RUN] Would perform the following operations:"
-        log_info "  1. Stop non-essential services"
-        log_info "  2. Replace system files with new OS"
-        log_info "  3. Configure new OS with backed up settings"
-        log_info "  4. Install cloud-specific agents"
-        log_info "  5. Restore network configuration"
-        log_info "  6. Restore home directories and SSH keys"
-        log_info "  7. Update bootloader"
-        log_info "  8. Reboot system"
-        return
-    fi
-    
-    log_warning "==================================================="
-    log_warning "  CAUTION: This will replace the current OS!"
-    log_warning "  All data not backed up will be LOST!"
-    log_warning "  Ensure you have a recovery plan!"
-    log_warning "==================================================="
-    log_info ""
+    echo ""
+    printf "${BOLD}${YELLOW}==================================================${NC}\n"
+    printf "${BOLD}${YELLOW}  CAUTION: This will replace the current OS!${NC}\n"
+    printf "${BOLD}${YELLOW}  All data not backed up will be LOST!${NC}\n"
+    printf "${BOLD}${YELLOW}  Ensure you have a recovery plan!${NC}\n"
+    printf "${BOLD}${YELLOW}==================================================${NC}\n"
+    echo ""
     log_info "Backup location: ${BACKUP_DIR}"
     log_info "Target OS: ${TARGET_OS} ${TARGET_VERSION}"
-    log_info ""
+    echo ""
     
-    read -p "Are you sure you want to continue? (yes/no): " confirm
+    printf "${BOLD}Are you sure you want to continue? (yes/no):${NC} "
+    read -r confirm
     if [[ "${confirm,,}" != "yes" ]]; then
         log_info "Operation cancelled by user."
         exit 0
@@ -778,28 +912,77 @@ EOF
     # Install cloud agents for the new OS
     install_cloud_agents
     
+    # Setup automatic restoration on first boot
+    setup_auto_restore
+    
     log_success "OS change preparation complete."
-    log_info ""
-    log_info "==================================================="
-    log_info "  IMPORTANT: Manual Steps Required"
-    log_info "==================================================="
-    log_info ""
+    echo ""
+    printf "${BOLD}${CYAN}==================================================${NC}\n"
+    printf "${BOLD}${CYAN}  Next Steps${NC}\n"
+    printf "${BOLD}${CYAN}==================================================${NC}\n"
+    echo ""
     log_info "The backup has been created at: ${BACKUP_DIR}"
-    log_info ""
-    log_info "To complete the OS change, you have two options:"
-    log_info ""
-    log_info "Option 1: Cloud Provider Console (Recommended)"
+    echo ""
+    log_info "To complete the OS change:"
+    echo ""
     log_info "  1. Go to your cloud provider's console"
     log_info "  2. Stop the VM"
     log_info "  3. Change the boot disk/image to ${TARGET_OS} ${TARGET_VERSION}"
     log_info "  4. Start the VM"
-    log_info "  5. Run the restoration script:"
-    log_info "     sudo ${BACKUP_DIR}/restore.sh"
-    log_info ""
-    log_info "Option 2: In-place installation (Advanced)"
-    log_info "  This requires rebooting into a rescue/live environment"
-    log_info "  and replacing the root filesystem."
-    log_info ""
+    echo ""
+    printf "${GREEN}Restoration will run automatically on first boot!${NC}\n"
+    echo ""
+    log_info "If automatic restoration doesn't run, execute manually:"
+    log_info "  sudo ${BACKUP_DIR}/restore.sh"
+    echo ""
+}
+
+# Setup automatic restoration after OS change
+setup_auto_restore() {
+    log_info "Setting up automatic restoration..."
+    
+    # Create systemd service for automatic restoration
+    cat > "${BACKUP_DIR}/changeos-restore.service" << EOF
+[Unit]
+Description=Change OS - Automatic Restoration Service
+After=network.target
+ConditionPathExists=${BACKUP_DIR}/pending_restore
+
+[Service]
+Type=oneshot
+ExecStart=${BACKUP_DIR}/restore.sh
+ExecStartPost=/bin/rm -f ${BACKUP_DIR}/pending_restore
+ExecStartPost=/bin/systemctl disable changeos-restore.service
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Create installation instructions for the service
+    cat > "${BACKUP_DIR}/install_auto_restore.sh" << 'AUTO_RESTORE_SCRIPT'
+#!/bin/bash
+# Install automatic restoration service
+# Run this after changing the OS image
+
+BACKUP_DIR="$(dirname "$0")"
+
+if [[ -f "${BACKUP_DIR}/changeos-restore.service" ]]; then
+    cp "${BACKUP_DIR}/changeos-restore.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable changeos-restore.service
+    echo "Automatic restoration service installed and enabled."
+    echo "The restoration will run on next boot."
+else
+    echo "Error: Service file not found."
+    exit 1
+fi
+AUTO_RESTORE_SCRIPT
+
+    chmod +x "${BACKUP_DIR}/install_auto_restore.sh"
+    
+    log_success "Automatic restoration setup created"
+    log_info "After changing OS, run: sudo ${BACKUP_DIR}/install_auto_restore.sh"
 }
 
 # Install cloud-specific agents
@@ -908,28 +1091,21 @@ EOF
 
 # Main function
 main() {
-    echo "============================================="
-    echo "  Change OS Script v${SCRIPT_VERSION}"
-    echo "  For Cloud VPS (Azure, AWS, GCP, Oracle)"
-    echo "============================================="
-    echo ""
-    
-    # Parse arguments
-    parse_args "$@"
-    
-    # Check for required options
-    if [[ -z "$TARGET_OS" ]] || [[ -z "$TARGET_VERSION" ]]; then
-        log_error "Target OS and version are required."
-        echo ""
-        show_help
-        exit 1
-    fi
-    
-    # Check root
+    # Check root first
     check_root
     
-    # Validate target OS
-    validate_target_os
+    # Show interactive OS selection menu
+    select_os_menu
+    select_version_menu
+    confirm_selection
+    
+    clear
+    echo ""
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    printf "${BOLD}${CYAN}  Change OS Script v${SCRIPT_VERSION}${NC}\n"
+    printf "${BOLD}${CYAN}  For Cloud VPS (Azure, AWS, GCP, Oracle)${NC}\n"
+    printf "${BOLD}${CYAN}=============================================${NC}\n"
+    echo ""
     
     # Detect current system
     detect_current_os
@@ -940,10 +1116,6 @@ main() {
     
     log_info "Backup directory: ${BACKUP_DIR}"
     log_info "Target OS: ${TARGET_OS} ${TARGET_VERSION}"
-    
-    if [[ "$DRY_RUN" == true ]]; then
-        log_warning "Running in DRY-RUN mode - no changes will be made"
-    fi
     
     echo ""
     
@@ -962,9 +1134,7 @@ main() {
     echo ""
     
     # Install dependencies and perform OS change
-    if [[ "$DRY_RUN" != true ]]; then
-        install_dependencies
-    fi
+    install_dependencies
     
     prepare_new_os
     perform_os_change
