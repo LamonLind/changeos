@@ -988,17 +988,30 @@ RCLOCAL_SCRIPT
         chmod +x /var/lib/cloud/scripts/per-once/changeos-restore.sh
     fi
     
-    # Also add to rc.local as fallback
+    # Also add to rc.local as fallback (if it exists)
     if [[ -f /etc/rc.local ]]; then
         if ! grep -q "changeos-restore" /etc/rc.local; then
             log_info "Adding restoration to /etc/rc.local as fallback..."
-            sed -i '/^exit 0/i # Changeos automatic restoration\nif [[ -f '"${BACKUP_DIR}"'/pending_restore ]]; then '"${BACKUP_DIR}"'/restore.sh; rm -f '"${BACKUP_DIR}"'/pending_restore; fi' /etc/rc.local 2>/dev/null || true
+            # Create a temporary file with the restoration command
+            local rc_local_cmd="# Changeos automatic restoration
+if [ -f \"${BACKUP_DIR}/pending_restore\" ]; then \"${BACKUP_DIR}/restore.sh\"; rm -f \"${BACKUP_DIR}/pending_restore\"; fi"
+            # Insert before 'exit 0' if present, otherwise append
+            if grep -q "^exit 0" /etc/rc.local; then
+                local temp_file
+                temp_file=$(mktemp)
+                awk -v cmd="$rc_local_cmd" '/^exit 0/ { print cmd } { print }' /etc/rc.local > "$temp_file" && mv "$temp_file" /etc/rc.local
+            else
+                echo "$rc_local_cmd" >> /etc/rc.local
+            fi
         fi
     fi
     
     # Create cron job as another fallback
     log_info "Setting up cron job for restoration..."
-    echo "@reboot root [ -f ${BACKUP_DIR}/pending_restore ] && ${BACKUP_DIR}/restore.sh && rm -f ${BACKUP_DIR}/pending_restore" > /etc/cron.d/changeos-restore
+    cat > /etc/cron.d/changeos-restore << CRONJOB
+# Changeos automatic restoration cron job
+@reboot root [ -f "${BACKUP_DIR}/pending_restore" ] && "${BACKUP_DIR}/restore.sh" && rm -f "${BACKUP_DIR}/pending_restore"
+CRONJOB
     chmod 644 /etc/cron.d/changeos-restore
     
     log_success "Automatic restoration configured using multiple methods"
