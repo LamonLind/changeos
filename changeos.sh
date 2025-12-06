@@ -78,13 +78,13 @@ select_os_menu() {
     read -r os_choice
     
     case $os_choice in
-        1) TARGET_OS="debian" ;;
-        2) TARGET_OS="ubuntu" ;;
-        3) TARGET_OS="almalinux" ;;
-        4) TARGET_OS="rocky" ;;
-        5) TARGET_OS="centos" ;;
-        6) TARGET_OS="fedora" ;;
-        7) TARGET_OS="kali" ;;
+        1) TARGET_OS="debian"; TARGET_VERSION="" ;;
+        2) TARGET_OS="ubuntu"; TARGET_VERSION="" ;;
+        3) TARGET_OS="almalinux"; TARGET_VERSION="" ;;
+        4) TARGET_OS="rocky"; TARGET_VERSION="" ;;
+        5) TARGET_OS="centos"; TARGET_VERSION="" ;;
+        6) TARGET_OS="fedora"; TARGET_VERSION="" ;;
+        7) TARGET_OS="kali"; TARGET_VERSION="" ;;
         0) 
             echo ""
             log_info "Exiting..."
@@ -920,11 +920,11 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-    # Create installation instructions for the service
+    # Create installation script for the service
     cat > "${BACKUP_DIR}/install_auto_restore.sh" << 'AUTO_RESTORE_SCRIPT'
 #!/bin/bash
 # Install automatic restoration service
-# Run this after changing the OS image
+# This script is provided as a backup if automatic installation fails
 
 BACKUP_DIR="$(dirname "$0")"
 
@@ -942,8 +942,80 @@ AUTO_RESTORE_SCRIPT
 
     chmod +x "${BACKUP_DIR}/install_auto_restore.sh"
     
-    log_success "Automatic restoration setup created"
-    log_info "After changing OS, run: sudo ${BACKUP_DIR}/install_auto_restore.sh"
+    # Create cloud-init script for automatic restoration (works after boot image change)
+    mkdir -p "${BACKUP_DIR}/cloud-init"
+    cat > "${BACKUP_DIR}/cloud-init/changeos-restore.sh" << CLOUDINIT_SCRIPT
+#!/bin/bash
+# Cloud-init restoration script for changeos
+# This runs on first boot after OS change
+
+BACKUP_DIR="${BACKUP_DIR}"
+
+if [[ -f "\${BACKUP_DIR}/pending_restore" ]]; then
+    echo "Change OS: Running automatic restoration..."
+    "\${BACKUP_DIR}/restore.sh"
+    rm -f "\${BACKUP_DIR}/pending_restore"
+    echo "Change OS: Restoration complete"
+fi
+CLOUDINIT_SCRIPT
+    chmod +x "${BACKUP_DIR}/cloud-init/changeos-restore.sh"
+    
+    # Create rc.local script for systems without cloud-init
+    cat > "${BACKUP_DIR}/rc.local.changeos" << RCLOCAL_SCRIPT
+#!/bin/bash
+# rc.local restoration script for changeos
+# Add this to /etc/rc.local if cloud-init is not available
+
+BACKUP_DIR="${BACKUP_DIR}"
+
+if [[ -f "\${BACKUP_DIR}/pending_restore" ]]; then
+    "\${BACKUP_DIR}/restore.sh"
+    rm -f "\${BACKUP_DIR}/pending_restore"
+fi
+RCLOCAL_SCRIPT
+    chmod +x "${BACKUP_DIR}/rc.local.changeos"
+    
+    # Install systemd service on current system
+    log_info "Installing automatic restoration service..."
+    cp "${BACKUP_DIR}/changeos-restore.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable changeos-restore.service
+    
+    # Install cloud-init script if cloud-init is available
+    if [[ -d /var/lib/cloud/scripts/per-once ]]; then
+        log_info "Installing cloud-init restoration script..."
+        cp "${BACKUP_DIR}/cloud-init/changeos-restore.sh" /var/lib/cloud/scripts/per-once/
+        chmod +x /var/lib/cloud/scripts/per-once/changeos-restore.sh
+    fi
+    
+    # Also add to rc.local as fallback (if it exists)
+    if [[ -f /etc/rc.local ]]; then
+        if ! grep -q "changeos-restore" /etc/rc.local; then
+            log_info "Adding restoration to /etc/rc.local as fallback..."
+            # Create a temporary file with the restoration command
+            local rc_local_cmd="# Changeos automatic restoration
+if [ -f \"${BACKUP_DIR}/pending_restore\" ]; then \"${BACKUP_DIR}/restore.sh\"; rm -f \"${BACKUP_DIR}/pending_restore\"; fi"
+            # Insert before 'exit 0' if present, otherwise append
+            if grep -q "^exit 0" /etc/rc.local; then
+                local temp_file
+                temp_file=$(mktemp)
+                awk -v cmd="$rc_local_cmd" '/^exit 0/ { print cmd } { print }' /etc/rc.local > "$temp_file" && mv "$temp_file" /etc/rc.local
+            else
+                echo "$rc_local_cmd" >> /etc/rc.local
+            fi
+        fi
+    fi
+    
+    # Create cron job as another fallback
+    log_info "Setting up cron job for restoration..."
+    cat > /etc/cron.d/changeos-restore << CRONJOB
+# Changeos automatic restoration cron job
+@reboot root [ -f "${BACKUP_DIR}/pending_restore" ] && "${BACKUP_DIR}/restore.sh" && rm -f "${BACKUP_DIR}/pending_restore"
+CRONJOB
+    chmod 644 /etc/cron.d/changeos-restore
+    
+    log_success "Automatic restoration configured using multiple methods"
+    log_info "Restoration will run automatically on first boot after OS change"
 }
 
 # Install cloud-specific agents
