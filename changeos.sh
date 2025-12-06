@@ -293,21 +293,29 @@ backup_home_dirs() {
     mkdir -p "$home_backup_dir"
     
     # Backup all home directories
-    for home_dir in /home/*; do
-        if [[ -d "$home_dir" ]]; then
-            local username=$(basename "$home_dir")
-            log_info "  Backing up /home/${username}..."
-            
-            if [[ "$DRY_RUN" == true ]]; then
-                log_info "  [DRY-RUN] Would backup /home/${username}"
-            else
-                tar -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username" 2>/dev/null || {
-                    log_warning "Failed to backup /home/${username}, trying with --ignore-failed-read"
-                    tar --ignore-failed-read -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username"
-                }
+    shopt -s nullglob
+    local home_dirs=(/home/*)
+    shopt -u nullglob
+    
+    if [[ ${#home_dirs[@]} -eq 0 ]]; then
+        log_warning "No home directories found in /home/"
+    else
+        for home_dir in "${home_dirs[@]}"; do
+            if [[ -d "$home_dir" ]]; then
+                local username=$(basename "$home_dir")
+                log_info "  Backing up /home/${username}..."
+                
+                if [[ "$DRY_RUN" == true ]]; then
+                    log_info "  [DRY-RUN] Would backup /home/${username}"
+                else
+                    tar -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username" 2>/dev/null || {
+                        log_warning "Failed to backup /home/${username}, trying with --ignore-failed-read"
+                        tar --ignore-failed-read -czf "${home_backup_dir}/${username}.tar.gz" -C /home "$username"
+                    }
+                fi
             fi
-        fi
-    done
+        done
+    fi
     
     # Backup /root if needed
     if [[ -d /root ]]; then
@@ -328,13 +336,25 @@ backup_ssh_config() {
     mkdir -p "$ssh_backup_dir"
     
     # Backup SSH host keys
-    cp /etc/ssh/ssh_host_* "${ssh_backup_dir}/" 2>/dev/null || true
+    shopt -s nullglob
+    local ssh_host_keys=(/etc/ssh/ssh_host_*)
+    shopt -u nullglob
+    
+    if [[ ${#ssh_host_keys[@]} -gt 0 ]]; then
+        cp "${ssh_host_keys[@]}" "${ssh_backup_dir}/" 2>/dev/null || true
+    else
+        log_warning "No SSH host keys found in /etc/ssh/"
+    fi
     
     # Backup sshd_config
     cp /etc/ssh/sshd_config "${ssh_backup_dir}/" 2>/dev/null || true
     
     # Backup authorized_keys for all users
-    for home_dir in /home/*; do
+    shopt -s nullglob
+    local home_dirs=(/home/*)
+    shopt -u nullglob
+    
+    for home_dir in "${home_dirs[@]}"; do
         if [[ -f "${home_dir}/.ssh/authorized_keys" ]]; then
             local username=$(basename "$home_dir")
             mkdir -p "${ssh_backup_dir}/users/${username}"
@@ -488,10 +508,25 @@ restore_users() {
     log_info "Restoring user accounts..."
     
     if [[ -d "${BACKUP_DIR}/users" ]]; then
+        # First, restore groups from the backup
+        if [[ -f "${BACKUP_DIR}/users/group" ]]; then
+            while IFS=: read -r groupname x gid members; do
+                if [[ $gid -ge 1000 ]] && [[ $gid -lt 65534 ]]; then
+                    if ! getent group "$groupname" &>/dev/null; then
+                        groupadd -g "$gid" "$groupname" 2>/dev/null || true
+                    fi
+                fi
+            done < "${BACKUP_DIR}/users/group"
+        fi
+        
         # Merge users (don't overwrite system users)
         while IFS=: read -r username x uid gid comment home shell; do
             if [[ $uid -ge 1000 ]] && [[ $uid -lt 65534 ]]; then
                 if ! id "$username" &>/dev/null; then
+                    # Create group if it doesn't exist
+                    if ! getent group "$gid" &>/dev/null; then
+                        groupadd -g "$gid" "$username" 2>/dev/null || true
+                    fi
                     useradd -u "$uid" -g "$gid" -d "$home" -s "$shell" -c "$comment" "$username" 2>/dev/null || true
                 fi
             fi
@@ -541,10 +576,16 @@ install_dependencies() {
     if command -v apt-get &>/dev/null; then
         apt-get update -qq
         apt-get install -y -qq wget curl debootstrap
-    elif command -v yum &>/dev/null; then
-        yum install -y -q wget curl
     elif command -v dnf &>/dev/null; then
         dnf install -y -q wget curl
+        # Install EPEL for debootstrap on RHEL-based systems
+        dnf install -y -q epel-release 2>/dev/null || true
+        dnf install -y -q debootstrap 2>/dev/null || true
+    elif command -v yum &>/dev/null; then
+        yum install -y -q wget curl
+        # Install EPEL for debootstrap on older RHEL-based systems
+        yum install -y -q epel-release 2>/dev/null || true
+        yum install -y -q debootstrap 2>/dev/null || true
     fi
     
     log_success "Dependencies installed"
