@@ -13,7 +13,6 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
-MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 # =================================================================
@@ -50,6 +49,7 @@ CURRENT_INTERFACE=""
 DISK_DEVICE=""
 PROVIDER_DETECTED=""
 BOOT_MODE=""
+INSTALL_METHOD=""
 
 # =================================================================
 # UTILITY FUNCTIONS
@@ -70,6 +70,10 @@ success() {
 
 info() {
     echo -e "${CYAN}[INFO] $1${NC}" | tee -a "$LOG_FILE"
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING] $1${NC}" | tee -a "$LOG_FILE"
 }
 
 # =================================================================
@@ -148,6 +152,8 @@ SSH_PORT="$SSH_PORT"
 SSH_KEY_ONLY="$SSH_KEY_ONLY"
 ALLOW_ROOT_LOGIN="$ALLOW_ROOT_LOGIN"
 CURRENT_IP="$CURRENT_IP"
+CURRENT_GATEWAY="$CURRENT_GATEWAY"
+CURRENT_INTERFACE="$CURRENT_INTERFACE"
 EOF
     
     # Save SSH key file
@@ -444,7 +450,7 @@ GRUB
     
     # Set as default boot entry
     if [ -f /etc/default/grub ]; then
-        sed -i 's/GRUB_DEFAULT=.*/GRUB_DEFAULT="Auto OS Reinstall - $TARGET_OS"/' /etc/default/grub
+        sed -i "s/GRUB_DEFAULT=.*/GRUB_DEFAULT=\"Auto OS Reinstall - $TARGET_OS\"/" /etc/default/grub
         echo "GRUB_TIMEOUT=5" >> /etc/default/grub
     fi
     
@@ -509,14 +515,14 @@ install_dd_reinstall() {
     
     # Write image to disk
     info "Writing image to /dev/$DISK_DEVICE..."
-    dd if=/tmp/os_image.img of=/dev/$DISK_DEVICE bs=4M status=progress
+    dd if=/tmp/os_image.img of="/dev/$DISK_DEVICE" bs=4M status=progress
     
     # Sync and wait
     sync
     sleep 2
     
     # Resize partition to use full disk
-    partprobe /dev/$DISK_DEVICE 2>/dev/null || true
+    partprobe "/dev/$DISK_DEVICE" 2>/dev/null || true
     
     success "DD image written successfully"
 }
@@ -543,7 +549,7 @@ install_debootstrap() {
     
     # Mount new root
     mkdir -p /mnt/newroot
-    mount /dev/$DISK_DEVICE /mnt/newroot
+    mount "/dev/$DISK_DEVICE" /mnt/newroot
     
     # Debootstrap new system
     case $TARGET_OS in
@@ -554,7 +560,7 @@ install_debootstrap() {
     esac
     
     info "Debootstrapping $SUITE..."
-    debootstrap --include=openssh-server,sudo,curl,wget $SUITE /mnt/newroot
+    debootstrap --include=openssh-server,sudo,curl,wget "$SUITE" /mnt/newroot
     
     # Copy SSH configuration
     mkdir -p /mnt/newroot/root/vps_reinstall_data
@@ -641,8 +647,6 @@ confirm_and_reboot() {
 
 # =================================================================
 # MAIN EXECUTION
-# =================
-# MAIN EXECUTION
 # =================================================================
 
 main() {
@@ -672,10 +676,10 @@ EOF
     info "SSH Configuration (This will be restored after OS install)"
     echo "========================================="
     
-    read -p "Username [default: admin]: " input_user
+    read -r -p "Username [default: admin]: " input_user
     CUSTOM_ROOT_USER="${input_user:-admin}"
     
-    read -s -p "Password (leave empty for SSH key only): " input_pass
+    read -r -s -p "Password (leave empty for SSH key only): " input_pass
     echo ""
     if [ -n "$input_pass" ]; then
         CUSTOM_ROOT_PASSWORD="$input_pass"
@@ -686,7 +690,7 @@ EOF
     echo "1) Use existing key from /root/.ssh/authorized_keys"
     echo "2) Paste new SSH public key"
     echo "3) Skip (use password only)"
-    read -p "Choice [1-3]: " key_choice
+    read -r -p "Choice [1-3]: " key_choice
     
     case $key_choice in
         1)
@@ -696,7 +700,7 @@ EOF
             fi
             ;;
         2)
-            read -p "Paste SSH public key: " input_key
+            read -r -p "Paste SSH public key: " input_key
             CUSTOM_SSH_KEY="$input_key"
             ;;
         3)
@@ -706,7 +710,7 @@ EOF
             ;;
     esac
     
-    read -p "SSH Port [default: 22]: " input_port
+    read -r -p "SSH Port [default: 22]: " input_port
     SSH_PORT="${input_port:-22}"
     
     echo ""
@@ -719,7 +723,7 @@ EOF
     echo "5) Rocky Linux 9"
     echo "6) AlmaLinux 9"
     echo "7) CentOS Stream 9"
-    read -p "Choice [1-7]: " os_choice
+    read -r -p "Choice [1-7]: " os_choice
     
     case $os_choice in
         1) TARGET_OS="ubuntu22" ;;
@@ -738,7 +742,7 @@ EOF
     echo "1) Network Reinstall (netboot.xyz) - Recommended"
     echo "2) DD Image (Direct write) - Faster"
     echo "3) Auto-detect"
-    read -p "Choice [1-3]: " method_choice
+    read -r -p "Choice [1-3]: " method_choice
     
     case $method_choice in
         1) INSTALL_METHOD="network" ;;
@@ -769,7 +773,7 @@ EOF
     echo "  Auth: $([ -n "$CUSTOM_SSH_KEY" ] && echo "SSH Key" || echo "Password")"
     echo "========================================="
     echo ""
-    read -p "START INSTALLATION? (yes/no): " confirm
+    read -r -p "START INSTALLATION? (yes/no): " confirm
     
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         error "Installation cancelled"
